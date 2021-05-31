@@ -88,8 +88,6 @@ public class GenerateProjectMojo
      * @throws MavenInvocationException upon maven archetype:generate run failure
      */
     private void generateFromArchetype(ProjectDefinition definition, ProjectStructure projectStructure) throws MavenInvocationException, MojoExecutionException {
-
-        getLog().info("Inside invoker "+definition.getId()+", strucutre:"+projectStructure.getId());
         InvocationRequest request = new DefaultInvocationRequest();
         request.setGoals(Collections.singletonList("archetype:generate"));
         request.setUserSettingsFile(mavenSession.getRequest().getUserSettingsFile());
