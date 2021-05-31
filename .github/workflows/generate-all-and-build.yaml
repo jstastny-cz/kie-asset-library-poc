@@ -1,4 +1,4 @@
-name: Maven Full Build
+name: Generate Projects And Build
 
 on:
   push:
