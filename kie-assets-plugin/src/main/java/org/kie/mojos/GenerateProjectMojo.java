@@ -69,8 +69,9 @@ public class GenerateProjectMojo
      */
     private ThrowingBiConsumer generateProjects() {
         return (definition, structure) -> {
-            getLog().info("active only"+activeStructureIds);
-            getLog().info("Invoked with "+definition.getId()+", strucutre:"+structure.getId());
+            getLog().info("Active definition expressions:" + activeDefinitionIds);
+            getLog().info("Active structure expressions:" + activeStructureIds);
+            getLog().info("About to generate using definition '" + definition.getId() + "' and structure '" + structure.getId() + "'");
             generateFromArchetype(definition, structure);
             addPomDependencies(definition, structure);
             setFinalNameInPom(definition, structure);
