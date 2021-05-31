@@ -186,6 +186,7 @@
                             </active-definitions>
                             <active-structures>
                                 <active-structure>!kjar</active-structure>
+                                <active-structure>kjar</active-structure> // should be overridden by the above
                                 <active-structure>!springboot</active-structure>
                             </active-structures>
                         </configuration>
