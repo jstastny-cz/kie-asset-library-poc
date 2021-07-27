@@ -77,7 +77,7 @@ public class GeneratedProjectUtils {
      * @param projectStructure properties with the project structure
      * @return Path denoting the newly created project.
      */
-    public static Path getOutputDirectoryForArchetype(Path outputDirectory, ProjectDefinition targetProject, ProjectStructure projectStructure) {
+    public static Path getOutputDirectoryForGeneratedProject(Path outputDirectory, ProjectDefinition targetProject, ProjectStructure projectStructure) {
         return outputDirectory.resolve(GeneratedProjectUtils.getTargetProjectName(targetProject, projectStructure));
     }
 }

@@ -18,6 +18,7 @@ package org.kie.mojos;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -39,7 +40,7 @@ import org.kie.utils.MaskedMavenMojoException;
 import org.kie.utils.ThrowingBiConsumer;
 
 /**
- * Goal which generates project structure using provided archetype.
+ * Goal which generates project structure using provided generation method.
  */
 @Mojo(name = "generate-project", defaultPhase = LifecyclePhase.PROCESS_SOURCES, requiresProject = false)
 public class GenerateProjectMojo
@@ -60,7 +61,7 @@ public class GenerateProjectMojo
         try {
             generateProjectsAtTargetLocation();
         } catch (MaskedMavenMojoException e) {
-            throw new MojoExecutionException("Error while generating projects from archetype.", e);
+            throw new MojoExecutionException("Error while generating projects.", e);
         }
     }
 
@@ -83,10 +84,10 @@ public class GenerateProjectMojo
      */
     private ThrowingBiConsumer generateProjects() {
         return (definition, structure) -> {
-            getLog().info("Active definition expressions:" + activeDefinitionIds);
-            getLog().info("Active structure expressions:" + activeStructureIds);
+            getLog().info("Active definition expressions:" + activeDefinitions);
+            getLog().info("Active structure expressions:" + activeStructures);
             getLog().info("About to generate using definition '" + definition.getId() + "' and structure '" + structure.getId() + "'");
-            generateFromArchetype(definition, structure);
+            generateProjectBasedOnConfiguration(definition, structure);
             addPomDependencies(definition, structure);
             setFinalNameInPom(definition, structure);
             addPomProperties(definition, structure);
@@ -94,7 +95,29 @@ public class GenerateProjectMojo
     }
 
     /**
-     * Generates project using archetype defined in {@linkplain ProjectStructure#getArchetype()} providing properties from
+     * Based on provided configuration decide which project generation method is being used.
+     * 
+     * @param definition project definition
+     * @param structure project structure
+     * @throws MavenInvocationException
+     * @throws MojoExecutionException
+     */
+    private void generateProjectBasedOnConfiguration(ProjectDefinition definition, ProjectStructure structure) throws MavenInvocationException, MojoExecutionException {
+        switch (structure.getGenerate().getType()) {
+            case ARCHETYPE:
+                generateFromArchetype(definition, structure);
+                break;
+            case QUARKUS_CLI:
+                generateUsingQuarkusCli(definition, structure);
+                break;
+            case MAVEN_PLUGIN:
+                generateUsingMavenPlugin(definition, structure);
+                break;
+        }
+    }
+
+    /**
+     * Generates project using archetype defined in {@linkplain ProjectStructure#getGenerate()} ()} providing properties from
      * {@linkplain ProjectDefinition#getGroupId()}, {@linkplain ProjectDefinition#getArtifactId()}, {@linkplain ProjectDefinition#getPackageName()}
      *
      * @param definition
@@ -111,9 +134,9 @@ public class GenerateProjectMojo
         properties.setProperty("groupId", definition.getGroupId());
         properties.setProperty("artifactId", GeneratedProjectUtils.getTargetProjectName(definition, projectStructure));
         properties.setProperty("package", definition.getPackageName());
-        properties.setProperty("archetypeVersion", projectStructure.getArchetype().getVersion());
-        properties.setProperty("archetypeGroupId", projectStructure.getArchetype().getGroupId());
-        properties.setProperty("archetypeArtifactId", projectStructure.getArchetype().getArtifactId());
+        properties.setProperty("archetypeVersion", projectStructure.getGenerate().getArchetype().getVersion());
+        properties.setProperty("archetypeGroupId", projectStructure.getGenerate().getArchetype().getGroupId());
+        properties.setProperty("archetypeArtifactId", projectStructure.getGenerate().getArchetype().getArtifactId());
         request.setProperties(properties);
         Invoker invoker = new DefaultInvoker();
         invoker.setWorkingDirectory(outputDirectory);
@@ -124,13 +147,162 @@ public class GenerateProjectMojo
     }
 
     /**
-     * Manipulate the POM files of generated project. Add dependencies defined by {@linkplain ConfigSet#getDependencies()} in:
-     * <ul>
-     * <li>{@linkplain ProjectDefinition#getConfig()}</li>
-     * <li>{@linkplain ProjectStructure#getCommonConfig()}</li>
-     * <li>{@linkplain ProjectStructure#getConfigSets()}
-     * with {@linkplain ConfigSet#getId()} matching one of {@linkplain #activeConfigSets}</li>
-     * </ul>
+     * Execute Quarkus CLI command as a process.
+     * 
+     * @param definition
+     * @param structure
+     * @throws MojoExecutionException
+     */
+    private void generateUsingQuarkusCli(ProjectDefinition definition, ProjectStructure structure) throws MojoExecutionException {
+        executeCliCommand(getQuarkusCliCreateAppCommand(definition, structure), outputDirectory);
+    }
+
+    /**
+     * Execute Maven plugin command as a process.
+     * 
+     * @param definition
+     * @param structure
+     * @throws MojoExecutionException
+     */
+    private void generateUsingMavenPlugin(ProjectDefinition definition, ProjectStructure structure) throws MojoExecutionException {
+        executeCliCommand(getMavenPluginCreateAppCommand(definition, structure), outputDirectory);
+    }
+
+    /**
+     * Execute given command in CLI/terminal.
+     * 
+     * @param command string containing the command
+     * @param workDir location where the comamnd is invoked.
+     * @throws MojoExecutionException
+     */
+    private void executeCliCommand(String command, File workDir) throws MojoExecutionException {
+        Process process = null;
+        try {
+            getLog().info("About to execute '" + command + "' in directory " + workDir.getAbsolutePath());
+            process = executeProcess(command, workDir);
+            if (!process.waitFor(30, TimeUnit.SECONDS)) {
+                throw new MojoExecutionException("CLI command didn't finish in time.");
+            }
+            if (process.exitValue() != 0) {
+                throw new MojoExecutionException("CLI command ended with state " + process.exitValue());
+            }
+        } catch (IOException | InterruptedException e) {
+            throw new MojoExecutionException("Exception while invoking CLI", e);
+        } finally {
+            try {
+                if (process != null) {
+                    collectLogs(getLog()::info, process.getInputStream());
+                    collectLogs(getLog()::error, process.getErrorStream());
+                }
+            } catch (IOException e) {
+                throw new MojoExecutionException("Exception while writing logs from CLI", e);
+            }
+        }
+    }
+
+    /**
+     * Collecting logs from the running process and passing to provided consumer.
+     * 
+     * @param consumer
+     * @param stream
+     * @throws IOException
+     */
+    private void collectLogs(Consumer<String> consumer, InputStream stream) throws IOException {
+        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream));
+        if (bufferedReader.ready()) {
+            consumer.accept(bufferedReader.lines().collect(Collectors.joining("\n")).trim());
+        }
+        bufferedReader.close();
+    }
+
+    /**
+     * Low-level method to start command as a new process in given directory.
+     * 
+     * @param command
+     * @param workDir
+     * @return
+     * @throws IOException
+     */
+    private Process executeProcess(String command, File workDir)
+            throws IOException {
+        Runtime runtime = Runtime.getRuntime();
+        return runtime.exec(command,
+                null,
+                workDir);
+    }
+
+    /**
+     * Get string Quarkus CLI command to generate new project based on provided configuration.
+     * 
+     * @param definition
+     * @param projectStructure
+     * @return string command
+     */
+    private String getQuarkusCliCreateAppCommand(ProjectDefinition definition, ProjectStructure projectStructure) {
+        Formatter formatter = new Formatter();
+        formatter
+                .format("%s run quarkus@quarkusio", getJbangExecutable())
+                .format(" create app")
+                .format(" %s:%s", definition.getGroupId(), GeneratedProjectUtils.getTargetProjectName(definition, projectStructure))
+                .format(" -x %s", projectStructure.getGenerate().getQuarkusExtensions())
+                .format(" --package-name %s", definition.getPackageName());
+        if (projectStructure.getGenerate().getQuarkusPlatformGav() != null) {
+            formatter.format(" --platform-bom %s:%s:%s",
+                    projectStructure.getGenerate().getQuarkusPlatformGav().getGroupId(),
+                    projectStructure.getGenerate().getQuarkusPlatformGav().getArtifactId(),
+                    projectStructure.getGenerate().getQuarkusPlatformGav().getVersion());
+        }
+        return formatter.toString();
+    }
+
+    /**
+     * Get path to Jbang executable.
+     * 
+     * @return string jbang executable
+     */
+    private String getJbangExecutable() {
+        String propertyJbangExecutable = "jbang.executable";
+        if (project.getProperties().containsKey(propertyJbangExecutable)) {
+            String executable = project.getProperties().get(propertyJbangExecutable).toString();
+            getLog().info("Using custom jbang executable '" + executable + "'");
+            return executable;
+        }
+        return "jbang";
+    }
+
+    /**
+     * Get string maven plugin command to generate new app based on provided configuration.
+     * 
+     * @param definition
+     * @param structure
+     * @return string command
+     */
+    private String getMavenPluginCreateAppCommand(ProjectDefinition definition, ProjectStructure structure) {
+        Formatter formatter = new Formatter();
+        formatter
+                .format("mvn %s:%s:%s:%s",
+                        structure.getGenerate().getMavenPluginConfig().getGroupId(),
+                        structure.getGenerate().getMavenPluginConfig().getArtifactId(),
+                        structure.getGenerate().getMavenPluginConfig().getVersion(),
+                        structure.getGenerate().getMavenPluginConfig().getGoal())
+                .format(" -DprojectGroupId=%s", definition.getGroupId())
+                .format(" -DprojectArtifactId=%s", GeneratedProjectUtils.getTargetProjectName(definition, structure))
+                .format(" -DpackageName=%s", definition.getPackageName());
+        if (structure.getGenerate().getQuarkusPlatformGav() != null) {
+            formatter
+                    .format(" -DplatformGroupId=%s", structure.getGenerate().getQuarkusPlatformGav().getGroupId())
+                    .format(" -DplatformArtifactId=%s", structure.getGenerate().getQuarkusPlatformGav().getArtifactId())
+                    .format(" -DplatformVersion=%s", structure.getGenerate().getQuarkusPlatformGav().getVersion());
+        }
+        // append other properties from pom.xml, e.g. noCode, ...
+        for (Map.Entry property : structure.getGenerate().getProperties().entrySet()) {
+            formatter.format(" -D%s=%s", property.getKey(), property.getValue());
+        }
+        return formatter.toString();
+    }
+
+    /**
+     * Manipulate the POM files of generated project. Add dependencies defined by {@linkplain ConfigSet#getDependencies()}.
      * 
      * @param definition project definition to get references from
      * @param structure project structure to get config-set with matching ids from
@@ -138,25 +310,14 @@ public class GenerateProjectMojo
      */
     private void addPomDependencies(ProjectDefinition definition, ProjectStructure structure) throws MojoExecutionException {
         Path pomFile = getPathToPom(definition, structure);
-        manipulatePom(pomFile, project -> {
-            project.getDependencies().addAll(definition.getConfig().getDependencies());
-            project.getDependencies().addAll(structure.getCommonConfig().getDependencies());
-            project.getDependencies().addAll(
-                    structure.getConfigSets().stream()
-                            .filter(it -> activeConfigSets.contains(it.getId()))
-                            .flatMap(it -> it.getDependencies().stream())
-                            .collect(Collectors.toList()));
-        });
+        manipulatePom(pomFile, project -> project.getDependencies().addAll(
+                resolveActiveConfigSets(definition, structure).stream()
+                        .flatMap(it -> it.getDependencies().stream())
+                        .collect(Collectors.toList())));
     }
 
     /**
-     * Manipulate the POM files of generated project. Add properties defined by {@linkplain ConfigSet#getProperties()} in:
-     * <ul>
-     * <li>{@linkplain ProjectDefinition#getConfig()}</li>
-     * <li>{@linkplain ProjectStructure#getCommonConfig()}</li>
-     * <li>{@linkplain ProjectStructure#getConfigSets()}
-     * with {@linkplain ConfigSet#getId()} matching one of {@linkplain #activeConfigSets}</li>
-     * </ul>
+     * Manipulate the POM files of generated project. Add properties defined by {@linkplain ConfigSet#getProperties()}.
      * 
      * @param definition project definition to get references from
      * @param structure project structure to get config-set with matching ids from
@@ -164,14 +325,9 @@ public class GenerateProjectMojo
      */
     private void addPomProperties(ProjectDefinition definition, ProjectStructure structure) throws MojoExecutionException {
         Path pomFile = getPathToPom(definition, structure);
-        manipulatePom(pomFile, project -> {
-            project.getProperties().putAll(definition.getConfig().getProperties());
-            project.getProperties().putAll(structure.getCommonConfig().getProperties());
-            structure.getConfigSets().stream()
-                    .filter(it -> activeConfigSets.contains(it.getId()))
-                    .flatMap(it -> it.getProperties().entrySet().stream())
-                    .forEach(it -> project.getProperties().put(it.getKey(), it.getValue()));
-        });
+        manipulatePom(pomFile, project -> resolveActiveConfigSets(definition, structure).stream()
+                .flatMap(it -> it.getProperties().entrySet().stream())
+                .forEach(it -> project.getProperties().put(it.getKey(), it.getValue())));
     }
 
     /**
@@ -198,7 +354,7 @@ public class GenerateProjectMojo
      * @return path to pom.xml
      */
     private Path getPathToPom(ProjectDefinition definition, ProjectStructure structure) {
-        Path projectDir = GeneratedProjectUtils.getOutputDirectoryForArchetype(outputDirectory.toPath(), definition, structure);
+        Path projectDir = GeneratedProjectUtils.getOutputDirectoryForGeneratedProject(outputDirectory.toPath(), definition, structure);
         Path pomFile = projectDir.resolve("pom.xml");
         return pomFile;
     }

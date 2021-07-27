@@ -57,14 +57,8 @@ public class CopyExternalResourcesMojo extends AbstractMojoDefiningParameters {
     }
 
     /**
-     * Copy resources specified as {@linkplain ConfigSet#getCopyResources()} by one of:
-     * <ul>
-     * <li>{@linkplain ProjectDefinition#getConfig()}</li>
-     * <li>{@linkplain ProjectStructure#getCommonConfig()}</li>
-     * <li>{@linkplain ProjectStructure#getConfigSets()}
-     * with {@linkplain ConfigSet#getId()} matching one of {@linkplain #activeConfigSets}</li>
-     * </ul>
-     * The target location is denoted by {@linkplain GeneratedProjectUtils#getOutputDirectoryForArchetype(Path, ProjectDefinition, ProjectStructure)}.
+     * Copy resources specified as {@linkplain ConfigSet#getCopyResources()}.
+     * The target location is denoted by {@linkplain GeneratedProjectUtils#getOutputDirectoryForGeneratedProject(Path, ProjectDefinition, ProjectStructure)}.
      */
     private void copyExternalResources() {
         getLog().info("Importing resources");
@@ -81,20 +75,15 @@ public class CopyExternalResourcesMojo extends AbstractMojoDefiningParameters {
      */
     private ThrowingBiConsumer copyResourcesAction() {
         return (definition, structure) -> {
-            List<Resource> resources = new ArrayList<>();
-            resources.addAll(definition.getConfig().getCopyResources());
-            resources.addAll(structure.getCommonConfig().getCopyResources());
-            resources.addAll(
-                    structure.getConfigSets().stream()
-                            .filter(it -> activeConfigSets.contains(it.getId()))
-                            .flatMap(it -> it.getCopyResources().stream())
-                            .collect(Collectors.toList()));
+            List<Resource> resources = resolveActiveConfigSets(definition, structure).stream()
+                    .flatMap(it -> it.getCopyResources().stream())
+                    .collect(Collectors.toList());
 
             for (Resource resource : resources) {
                 List<Path> files = new ArrayList<>();
                 files.addAll(FileFilteringUtils.filterFilesStartingAtPath(Paths.get(resource.getDirectory()), resource));
                 for (Path f : files) {
-                    Path dest = GeneratedProjectUtils.getOutputDirectoryForArchetype(outputDirectory.toPath(), definition, structure)
+                    Path dest = GeneratedProjectUtils.getOutputDirectoryForGeneratedProject(outputDirectory.toPath(), definition, structure)
                             .resolve(StringUtils.isBlank(resource.getTargetPath()) ? structure.getResourcesFolder() : resource.getTargetPath())
                             .resolve(f.getFileName());
                     getLog().debug(String.format("Copying %s to %s", f, dest));
@@ -105,13 +94,7 @@ public class CopyExternalResourcesMojo extends AbstractMojoDefiningParameters {
     }
 
     /**
-     * Copy source packages {@linkplain ConfigSet#getCopySources()} specified by one of:
-     * <ul>
-     * <li>{@linkplain ProjectDefinition#getConfig()}</li>
-     * <li>{@linkplain ProjectStructure#getCommonConfig()}</li>
-     * <li>{@linkplain ProjectStructure#getConfigSets()}
-     * with {@linkplain ConfigSet#getId()} matching one of {@linkplain #activeConfigSets}</li>
-     * </ul>
+     * Copy source packages {@linkplain ConfigSet#getCopySources()}.
      */
     private void copyExternalSources() {
         getActiveSetup().apply(copySourcesAction());
@@ -127,14 +110,9 @@ public class CopyExternalResourcesMojo extends AbstractMojoDefiningParameters {
      */
     private ThrowingBiConsumer copySourcesAction() {
         return (definition, structure) -> {
-            List<Package> filteredPackages = new ArrayList<>();
-            filteredPackages.addAll(definition.getConfig().getCopySources());
-            filteredPackages.addAll(structure.getCommonConfig().getCopySources());
-            filteredPackages.addAll(
-                    structure.getConfigSets().stream()
-                            .filter(it -> activeConfigSets.contains(it.getId()))
-                            .flatMap(it -> it.getCopySources().stream())
-                            .collect(Collectors.toList()));
+            List<Package> filteredPackages = resolveActiveConfigSets(definition, structure).stream()
+                    .flatMap(it -> it.getCopySources().stream())
+                    .collect(Collectors.toList());
             for (Package pack : filteredPackages) {
                 List<Path> files = new ArrayList<>();
                 Resource resource = new Resource();
@@ -143,7 +121,7 @@ public class CopyExternalResourcesMojo extends AbstractMojoDefiningParameters {
                 Path rootPath = currentPath.resolve(pack.getFilesystemRoot());
                 files.addAll(FileFilteringUtils.filterFilesStartingAtPath(rootPath.resolve(Paths.get("src", pack.getType(), pack.getLanguage(), fromPackageToPath(pack))), resource));
                 for (Path f : files) {
-                    Path dest = GeneratedProjectUtils.getOutputDirectoryForArchetype(outputDirectory.toPath(), definition, structure)
+                    Path dest = GeneratedProjectUtils.getOutputDirectoryForGeneratedProject(outputDirectory.toPath(), definition, structure)
                             .resolve("src").resolve(pack.getType()).resolve(pack.getLanguage()).resolve(fromPackageToPath(pack))
                             .resolve(f.getFileName());
                     getLog().debug(String.format("Copying %s to %s", f, dest));
