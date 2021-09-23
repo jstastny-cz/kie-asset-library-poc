@@ -92,9 +92,6 @@
                                     <artifactId>kogito-spring-boot-archetype</artifactId>
                                     <version>@version.kogito@</version>
                                 </archetype>
-                                <properties>
-                                    <starters></starters>
-                                </properties>
                             </generate>
                             <commonConfig>
                                 <reusableConfig>clean-main-resources-and-readme</reusableConfig>

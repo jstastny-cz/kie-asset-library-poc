@@ -137,6 +137,7 @@ public class GenerateProjectMojo
         properties.setProperty("archetypeVersion", projectStructure.getGenerate().getArchetype().getVersion());
         properties.setProperty("archetypeGroupId", projectStructure.getGenerate().getArchetype().getGroupId());
         properties.setProperty("archetypeArtifactId", projectStructure.getGenerate().getArchetype().getArtifactId());
+        properties.putAll(projectStructure.getGenerate().getProperties());
         request.setProperties(properties);
         Invoker invoker = new DefaultInvoker();
         invoker.setWorkingDirectory(outputDirectory);

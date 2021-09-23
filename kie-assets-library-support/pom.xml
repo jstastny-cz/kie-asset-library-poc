@@ -23,6 +23,8 @@
         <quarkus.archetype.artifactId>kogito-quarkus-archetype</quarkus.archetype.artifactId>
         <springboot.archetype.artifactId>kogito-spring-boot-archetype</springboot.archetype.artifactId>
         <quarkus.extensions>kogito-quarkus-decisions,kogito-quarkus-rules,kogito-quarkus-predictions,kogito-quarkus-processes</quarkus.extensions>
+        <springboot.starters>decisions,rules,predictions,processes</springboot.starters>
+        <springboot.addons></springboot.addons>
     </properties>
 
     <dependencies>
@@ -112,6 +114,10 @@
                                         <artifactId>${springboot.archetype.artifactId}</artifactId>
                                         <version>${version.kogito}</version>
                                     </archetype>
+                                    <properties>
+                                        <starters>${springboot.starters}</starters>
+                                        <addons>${springboot.addons}</addons>
+                                    </properties>
                                 </generate>
                                 <commonConfig>
                                     <reusableConfig>clean-main-resources-and-readme</reusableConfig>
