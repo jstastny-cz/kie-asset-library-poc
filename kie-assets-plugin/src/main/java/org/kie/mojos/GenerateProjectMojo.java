@@ -181,7 +181,7 @@ public class GenerateProjectMojo
         try {
             getLog().info("About to execute '" + command + "' in directory " + workDir.getAbsolutePath());
             process = executeProcess(command, workDir);
-            if (!process.waitFor(30, TimeUnit.SECONDS)) {
+            if (!process.waitFor(120, TimeUnit.SECONDS)) {
                 throw new MojoExecutionException("CLI command didn't finish in time.");
             }
             if (process.exitValue() != 0) {
