@@ -246,7 +246,8 @@ public class GenerateProjectMojo
                 .format(" create app")
                 .format(" %s:%s", definition.getGroupId(), GeneratedProjectUtils.getTargetProjectName(definition, projectStructure))
                 .format(" -x %s", projectStructure.getGenerate().getQuarkusExtensions())
-                .format(" --package-name %s", definition.getPackageName());
+                .format(" --package-name %s", definition.getPackageName())
+                .format(" --batch-mode");
         if (projectStructure.getGenerate().getQuarkusPlatformGav() != null) {
             formatter.format(" --platform-bom %s:%s:%s",
                     projectStructure.getGenerate().getQuarkusPlatformGav().getGroupId(),
@@ -286,6 +287,7 @@ public class GenerateProjectMojo
                         structure.getGenerate().getMavenPluginConfig().getArtifactId(),
                         structure.getGenerate().getMavenPluginConfig().getVersion(),
                         structure.getGenerate().getMavenPluginConfig().getGoal())
+                .format(" --batch-mode")
                 .format(" -DprojectGroupId=%s", definition.getGroupId())
                 .format(" -DprojectArtifactId=%s", GeneratedProjectUtils.getTargetProjectName(definition, structure))
                 .format(" -DpackageName=%s", definition.getPackageName());
