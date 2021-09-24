@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      MAVEN_OPTS: "-Xmx4096m"
+      MAVEN_OPTS: "-Xmx4096m -Dmaven.wagon.httpconnectionManager.ttlSeconds=25 -Dmaven.wagon.http.retryHandler.count=3"
 
     steps:
       - uses: actions/checkout@v2
