@@ -178,9 +178,12 @@ public class GenerateProjectMojo
      */
     private void executeCliCommand(String command, File workDir) throws MojoExecutionException {
         Process process = null;
+        Thread stdout = null, stderr = null;
         try {
             getLog().info("About to execute '" + command + "' in directory " + workDir.getAbsolutePath());
             process = executeProcess(command, workDir);
+            stdout = collectLogs(getLog()::info, process.getInputStream());
+            stderr = collectLogs(getLog()::error, process.getErrorStream());
             if (!process.waitFor(10, TimeUnit.MINUTES)) {
                 throw new MojoExecutionException("CLI command didn't finish in time.");
             }
@@ -191,29 +194,48 @@ public class GenerateProjectMojo
             throw new MojoExecutionException("Exception while invoking CLI", e);
         } finally {
             try {
-                if (process != null) {
-                    collectLogs(getLog()::info, process.getInputStream());
-                    collectLogs(getLog()::error, process.getErrorStream());
+                if (stdout != null) {
+                    stdout.join();
                 }
-            } catch (IOException e) {
-                throw new MojoExecutionException("Exception while writing logs from CLI", e);
+                if (stderr != null) {
+                    stderr.join();
+                }
+            } catch (InterruptedException e) {
+                throw new MojoExecutionException("Exception while closing console reading threads.", e);
             }
         }
     }
 
     /**
      * Collecting logs from the running process and passing to provided consumer.
+     *
+     * Works in a separate thread.
      * 
      * @param consumer
      * @param stream
+     * @return running thread to be joined after process finishes
      * @throws IOException
      */
-    private void collectLogs(Consumer<String> consumer, InputStream stream) throws IOException {
-        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream));
-        if (bufferedReader.ready()) {
-            consumer.accept(bufferedReader.lines().collect(Collectors.joining("\n")).trim());
-        }
-        bufferedReader.close();
+    private Thread collectLogs(Consumer<String> consumer, InputStream stream) throws IOException {
+        Thread thread = new Thread(() -> {
+            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream));
+            try {
+                String s;
+                while ((s = bufferedReader.readLine()) != null) {
+                    consumer.accept(s);
+                }
+            } catch (IOException e) {
+                getLog().error("Issues when reading from process input stream.", e);
+            } finally {
+                try {
+                    bufferedReader.close();
+                } catch (IOException e) {
+                    getLog().error("Issues when closing buffered reader for process.", e);
+                }
+            }
+        });
+        thread.start();
+        return thread;
     }
 
     /**
