@@ -18,6 +18,8 @@ package org.kie.mojos;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -178,12 +180,12 @@ public class GenerateProjectMojo
      */
     private void executeCliCommand(String command, File workDir) throws MojoExecutionException {
         Process process = null;
-        Thread stdout = null, stderr = null;
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
         try {
             getLog().info("About to execute '" + command + "' in directory " + workDir.getAbsolutePath());
             process = executeProcess(command, workDir);
-            stdout = collectLogs(getLog()::info, process.getInputStream());
-            stderr = collectLogs(getLog()::error, process.getErrorStream());
+            executorService.execute(collectLogs(getLog()::info, process.getInputStream()));
+            executorService.execute(collectLogs(getLog()::error, process.getErrorStream()));
             if (!process.waitFor(10, TimeUnit.MINUTES)) {
                 throw new MojoExecutionException("CLI command didn't finish in time.");
             }
@@ -193,31 +195,26 @@ public class GenerateProjectMojo
         } catch (IOException | InterruptedException e) {
             throw new MojoExecutionException("Exception while invoking CLI", e);
         } finally {
+            executorService.shutdown();
             try {
-                if (stdout != null) {
-                    stdout.join();
-                }
-                if (stderr != null) {
-                    stderr.join();
+                if (!executorService.awaitTermination(1, TimeUnit.SECONDS)) {
+                    executorService.shutdownNow();
                 }
             } catch (InterruptedException e) {
-                throw new MojoExecutionException("Exception while closing console reading threads.", e);
+                executorService.shutdownNow();
             }
         }
     }
 
     /**
      * Collecting logs from the running process and passing to provided consumer.
-     *
-     * Works in a separate thread.
      * 
      * @param consumer
      * @param stream
-     * @return running thread to be joined after process finishes
-     * @throws IOException
+     * @return Runnable action to collect logs real-time.
      */
-    private Thread collectLogs(Consumer<String> consumer, InputStream stream) throws IOException {
-        Thread thread = new Thread(() -> {
+    private Runnable collectLogs(Consumer<String> consumer, InputStream stream) {
+        return () -> {
             BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream));
             try {
                 String s;
@@ -233,9 +230,7 @@ public class GenerateProjectMojo
                     getLog().error("Issues when closing buffered reader for process.", e);
                 }
             }
-        });
-        thread.start();
-        return thread;
+        };
     }
 
     /**
