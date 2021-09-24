@@ -127,8 +127,8 @@ public abstract class AbstractMojoActiveConfigurationsTest<T extends AbstractMoj
         T myMojo = (T) rule.lookupMojo(goal, pomFile);
 
         AbstractMojoDefiningParameters.ActiveSetup activeSetup = myMojo.getActiveSetup();
-        assertThat("Wrongly parsed active-definition-ids", activeSetup.getActiveDefinitions(), Matchers.empty());
-        assertThat("Wrongly parsed active-structure-ids", activeSetup.getActiveStructures(), Matchers.containsInAnyOrder("A", "B"));
+        assertThat("Wrongly parsed activeDefinitions", activeSetup.getActiveDefinitions(), Matchers.empty());
+        assertThat("Wrongly parsed activeStructures", activeSetup.getActiveStructures(), Matchers.containsInAnyOrder("A", "B"));
 
         assertThat(activeSetup.getProjectDefinitions(), Matchers.allOf(
                 Matchers.notNullValue(),
