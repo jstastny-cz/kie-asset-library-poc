@@ -72,9 +72,6 @@
                                     <version>@version.quarkus.platform@</version>
                                 </quarkusPlatformGav>
                                 <quarkusExtensions>kogito-quarkus-decisions,kogito-quarkus-rules,kogito-quarkus-predictions,kogito-quarkus-processes</quarkusExtensions>
-                                <properties>
-                                    <noCode>true</noCode>
-                                </properties>
                             </generate>
                             <commonConfig>
                                 <reusableConfig>clean-main-resources-and-readme</reusableConfig>

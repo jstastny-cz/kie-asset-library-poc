@@ -15,31 +15,29 @@
  */
 package org.kie.mojos;
 
-import java.io.*;
-import java.nio.file.*;
-import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.Formatter;
+import java.util.Map;
+import java.util.Properties;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import org.apache.maven.model.Model;
-import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
-import org.apache.maven.model.io.xpp3.MavenXpp3Writer;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
-import org.apache.maven.project.MavenProject;
-import org.apache.maven.shared.invoker.*;
-import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
+import org.apache.maven.shared.invoker.DefaultInvocationRequest;
+import org.apache.maven.shared.invoker.DefaultInvoker;
+import org.apache.maven.shared.invoker.InvocationRequest;
+import org.apache.maven.shared.invoker.InvocationResult;
+import org.apache.maven.shared.invoker.Invoker;
+import org.apache.maven.shared.invoker.MavenInvocationException;
 import org.kie.model.ConfigSet;
 import org.kie.model.ProjectDefinition;
 import org.kie.model.ProjectStructure;
-import org.kie.utils.GeneratedProjectUtils;
-import org.kie.utils.MaskedMavenMojoException;
-import org.kie.utils.ThrowingBiConsumer;
+import org.kie.utils.*;
 
 /**
  * Goal which generates project structure using provided generation method.
@@ -68,19 +66,19 @@ public class GenerateProjectMojo
     }
 
     /**
-     * Using {@linkplain AbstractMojoDefiningParameters#getActiveSetup()}
+     * Using {@linkplain AbstractMojoDefiningParameters#getActiveMojoSetup()}
      * generates the directory structure for the current combination of definition and structure.
      */
     private void generateProjectsAtTargetLocation() {
         getLog().info("Importing resources");
-        getActiveSetup().apply(generateProjects());
+        getActiveMojoSetup().apply(generateProjects());
     }
 
     /**
      * Method that for given definition and structure generates the directory structure for all the active configurations.
      * <p>
-     * A BiConsumer implementation to be used together with {@linkplain AbstractMojoDefiningParameters#getActiveSetup()},
-     * passed through method {@linkplain AbstractMojoDefiningParameters.ActiveSetup#apply(BiConsumer)}.
+     * A BiConsumer implementation to be used together with {@linkplain AbstractMojoDefiningParameters#getActiveMojoSetup()},
+     * passed through method {@linkplain ActiveMojoSetup#apply(BiConsumer)}.
      *
      * @return BiConsumer action over {@linkplain ProjectDefinition} and {@linkplain ProjectStructure}.
      */
@@ -127,10 +125,29 @@ public class GenerateProjectMojo
      * @throws MavenInvocationException upon maven archetype:generate run failure
      */
     private void generateFromArchetype(ProjectDefinition definition, ProjectStructure projectStructure) throws MavenInvocationException, MojoExecutionException {
+        InvocationRequest request = getInvocationRequestForArchetypeGeneration(definition, projectStructure);
+        Invoker invoker = new DefaultInvoker();
+        invoker.setWorkingDirectory(outputDirectory);
+        InvocationResult result = invoker.execute(request);
+        if (result.getExitCode() != 0) {
+            throw new MojoExecutionException("Error during archetype generation. See previous errors in log.", result.getExecutionException());
+        }
+    }
+
+    /**
+     * Get maven invoker invocation request for maven archetype generation.
+     * 
+     * @param definition
+     * @param projectStructure
+     * @return
+     */
+    InvocationRequest getInvocationRequestForArchetypeGeneration(ProjectDefinition definition, ProjectStructure projectStructure) {
         InvocationRequest request = new DefaultInvocationRequest();
         request.setGoals(Collections.singletonList("archetype:generate"));
-        request.setUserSettingsFile(mavenSession.getRequest().getUserSettingsFile());
-        request.setLocalRepositoryDirectory(mavenSession.getRequest().getLocalRepositoryPath());
+        if (mavenSession != null && mavenSession.getRequest() != null) { // for tests
+            request.setUserSettingsFile(mavenSession.getRequest().getUserSettingsFile());
+            request.setLocalRepositoryDirectory(mavenSession.getRequest().getLocalRepositoryPath());
+        }
         Properties properties = new Properties();
         properties.setProperty("interactiveMode", "false");
         properties.setProperty("groupId", definition.getGroupId());
@@ -141,12 +158,7 @@ public class GenerateProjectMojo
         properties.setProperty("archetypeArtifactId", projectStructure.getGenerate().getArchetype().getArtifactId());
         properties.putAll(projectStructure.getGenerate().getProperties());
         request.setProperties(properties);
-        Invoker invoker = new DefaultInvoker();
-        invoker.setWorkingDirectory(outputDirectory);
-        InvocationResult result = invoker.execute(request);
-        if (result.getExitCode() != 0) {
-            throw new MojoExecutionException("Error during archetype generation. See previous errors in log.", result.getExecutionException());
-        }
+        return request;
     }
 
     /**
@@ -157,7 +169,7 @@ public class GenerateProjectMojo
      * @throws MojoExecutionException
      */
     private void generateUsingQuarkusCli(ProjectDefinition definition, ProjectStructure structure) throws MojoExecutionException {
-        executeCliCommand(getQuarkusCliCreateAppCommand(definition, structure), outputDirectory);
+        new CliUtils(getLog()).executeCliCommand(getQuarkusCliCreateAppCommand(definition, structure), outputDirectory);
     }
 
     /**
@@ -168,85 +180,7 @@ public class GenerateProjectMojo
      * @throws MojoExecutionException
      */
     private void generateUsingMavenPlugin(ProjectDefinition definition, ProjectStructure structure) throws MojoExecutionException {
-        executeCliCommand(getMavenPluginCreateAppCommand(definition, structure), outputDirectory);
-    }
-
-    /**
-     * Execute given command in CLI/terminal.
-     * 
-     * @param command string containing the command
-     * @param workDir location where the comamnd is invoked.
-     * @throws MojoExecutionException
-     */
-    private void executeCliCommand(String command, File workDir) throws MojoExecutionException {
-        Process process = null;
-        ExecutorService executorService = Executors.newFixedThreadPool(2);
-        try {
-            getLog().info("About to execute '" + command + "' in directory " + workDir.getAbsolutePath());
-            process = executeProcess(command, workDir);
-            executorService.execute(collectLogs(getLog()::info, process.getInputStream()));
-            executorService.execute(collectLogs(getLog()::error, process.getErrorStream()));
-            if (!process.waitFor(10, TimeUnit.MINUTES)) {
-                throw new MojoExecutionException("CLI command didn't finish in time.");
-            }
-            if (process.exitValue() != 0) {
-                throw new MojoExecutionException("CLI command ended with state " + process.exitValue());
-            }
-        } catch (IOException | InterruptedException e) {
-            throw new MojoExecutionException("Exception while invoking CLI", e);
-        } finally {
-            executorService.shutdown();
-            try {
-                if (!executorService.awaitTermination(1, TimeUnit.SECONDS)) {
-                    executorService.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                executorService.shutdownNow();
-            }
-        }
-    }
-
-    /**
-     * Collecting logs from the running process and passing to provided consumer.
-     * 
-     * @param consumer
-     * @param stream
-     * @return Runnable action to collect logs real-time.
-     */
-    private Runnable collectLogs(Consumer<String> consumer, InputStream stream) {
-        return () -> {
-            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream));
-            try {
-                String s;
-                while ((s = bufferedReader.readLine()) != null) {
-                    consumer.accept(s);
-                }
-            } catch (IOException e) {
-                getLog().error("Issues when reading from process input stream.", e);
-            } finally {
-                try {
-                    bufferedReader.close();
-                } catch (IOException e) {
-                    getLog().error("Issues when closing buffered reader for process.", e);
-                }
-            }
-        };
-    }
-
-    /**
-     * Low-level method to start command as a new process in given directory.
-     * 
-     * @param command
-     * @param workDir
-     * @return
-     * @throws IOException
-     */
-    private Process executeProcess(String command, File workDir)
-            throws IOException {
-        Runtime runtime = Runtime.getRuntime();
-        return runtime.exec(command,
-                null,
-                workDir);
+        new CliUtils(getLog()).executeCliCommand(getMavenPluginCreateAppCommand(definition, structure), outputDirectory);
     }
 
     /**
@@ -256,7 +190,7 @@ public class GenerateProjectMojo
      * @param projectStructure
      * @return string command
      */
-    private String getQuarkusCliCreateAppCommand(ProjectDefinition definition, ProjectStructure projectStructure) {
+    String getQuarkusCliCreateAppCommand(ProjectDefinition definition, ProjectStructure projectStructure) {
         Formatter formatter = new Formatter();
         formatter
                 .format("%s run quarkus@quarkusio", getJbangExecutable())
@@ -271,6 +205,9 @@ public class GenerateProjectMojo
                     projectStructure.getGenerate().getQuarkusPlatformGav().getArtifactId(),
                     projectStructure.getGenerate().getQuarkusPlatformGav().getVersion());
         }
+        if (projectStructure.getGenerate().getProperties() != null && !projectStructure.getGenerate().getProperties().isEmpty()) {
+            throw new RuntimeException("Quarkus CLI does not support additional custom properties.");
+        }
         return formatter.toString();
     }
 
@@ -281,7 +218,7 @@ public class GenerateProjectMojo
      */
     private String getJbangExecutable() {
         String propertyJbangExecutable = "jbang.executable";
-        if (project.getProperties().containsKey(propertyJbangExecutable)) {
+        if (project != null && project.getProperties().containsKey(propertyJbangExecutable)) {
             String executable = project.getProperties().get(propertyJbangExecutable).toString();
             getLog().info("Using custom jbang executable '" + executable + "'");
             return executable;
@@ -296,7 +233,7 @@ public class GenerateProjectMojo
      * @param structure
      * @return string command
      */
-    private String getMavenPluginCreateAppCommand(ProjectDefinition definition, ProjectStructure structure) {
+    String getMavenPluginCreateAppCommand(ProjectDefinition definition, ProjectStructure structure) {
         Formatter formatter = new Formatter();
         formatter
                 .format("mvn %s:%s:%s:%s",
@@ -309,6 +246,9 @@ public class GenerateProjectMojo
                 .format(" -DprojectArtifactId=%s", GeneratedProjectUtils.getTargetProjectName(definition, structure))
                 .format(" -Dextensions=%s", structure.getGenerate().getQuarkusExtensions())
                 .format(" -DpackageName=%s", definition.getPackageName());
+        if (structure.getGenerate().getQuarkusExtensions() != null && !structure.getGenerate().getQuarkusExtensions().isEmpty()) {
+            formatter.format(" -Dextensions=%s", structure.getGenerate().getQuarkusExtensions());
+        }
         if (structure.getGenerate().getQuarkusPlatformGav() != null) {
             formatter
                     .format(" -DplatformGroupId=%s", structure.getGenerate().getQuarkusPlatformGav().getGroupId())
@@ -331,8 +271,8 @@ public class GenerateProjectMojo
      */
     private void addPomDependencies(ProjectDefinition definition, ProjectStructure structure) throws MojoExecutionException {
         Path pomFile = getPathToPom(definition, structure);
-        manipulatePom(pomFile, project -> project.getDependencies().addAll(
-                resolveActiveConfigSets(definition, structure).stream()
+        PomManipulationUtils.manipulatePom(pomFile, project -> project.getDependencies().addAll(
+                getActiveMojoSetup().getActiveConfigSetResolver().apply(definition, structure).stream()
                         .flatMap(it -> it.getDependencies().stream())
                         .collect(Collectors.toList())));
     }
@@ -346,7 +286,7 @@ public class GenerateProjectMojo
      */
     private void addPomProperties(ProjectDefinition definition, ProjectStructure structure) throws MojoExecutionException {
         Path pomFile = getPathToPom(definition, structure);
-        manipulatePom(pomFile, project -> resolveActiveConfigSets(definition, structure).stream()
+        PomManipulationUtils.manipulatePom(pomFile, project -> getActiveMojoSetup().getActiveConfigSetResolver().apply(definition, structure).stream()
                 .flatMap(it -> it.getProperties().entrySet().stream())
                 .forEach(it -> project.getProperties().put(it.getKey(), it.getValue())));
     }
@@ -364,7 +304,7 @@ public class GenerateProjectMojo
             return;
         }
         Path pathToPom = getPathToPom(definition, structure);
-        manipulatePom(pathToPom, project -> project.getBuild().setFinalName(definition.getFinalName()));
+        PomManipulationUtils.manipulatePom(pathToPom, project -> project.getBuild().setFinalName(definition.getFinalName()));
     }
 
     /**
@@ -378,46 +318,5 @@ public class GenerateProjectMojo
         Path projectDir = GeneratedProjectUtils.getOutputDirectoryForGeneratedProject(outputDirectory.toPath(), definition, structure);
         Path pomFile = projectDir.resolve("pom.xml");
         return pomFile;
-    }
-
-    /**
-     * Get Maven Model from given pomFile.
-     * 
-     * @param pomFile path to pom.xml
-     * @return
-     * @throws MojoExecutionException
-     */
-    private Model getPomModel(Path pomFile) throws MojoExecutionException {
-        Model model = null;
-        try (
-                FileInputStream fileReader = new FileInputStream(pomFile.toFile());) {
-            MavenXpp3Reader mavenReader = new MavenXpp3Reader();
-            model = mavenReader.read(fileReader);
-            model.setPomFile(pomFile.toFile());
-        } catch (IOException | XmlPullParserException e) {
-            throw new MojoExecutionException("Error while opening generated pom: " + pomFile, e);
-        }
-        return model;
-    }
-
-    /**
-     * Method that accepts path to pom file and operation to be applied on the MavenProject
-     * instance coming from loading it.
-     * 
-     * @param pathToPom Path to the pom to load and save to after changes.
-     * @param manipulator consumer that receives {@linkplain MavenProject} instance.
-     * @throws MojoExecutionException when error during manipulation occurs.
-     */
-    private void manipulatePom(Path pathToPom, Consumer<MavenProject> manipulator) throws MojoExecutionException {
-        Model model = getPomModel(pathToPom);
-        try (
-                FileOutputStream fileWriter = new FileOutputStream(pathToPom.toFile());) {
-            MavenProject project = new MavenProject(model);
-            manipulator.accept(project);
-            MavenXpp3Writer mavenWriter = new MavenXpp3Writer();
-            mavenWriter.write(fileWriter, model);
-        } catch (IOException e) {
-            throw new MojoExecutionException("Error while saving manipulated pom: " + pathToPom, e);
-        }
     }
 }

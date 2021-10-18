@@ -62,20 +62,20 @@ public class CopyExternalResourcesMojo extends AbstractMojoDefiningParameters {
      */
     private void copyExternalResources() {
         getLog().info("Importing resources");
-        getActiveSetup().apply(copyResourcesAction());
+        getActiveMojoSetup().apply(copyResourcesAction());
     }
 
     /**
      * Method that for given definition and structure processes the copy resources for all the active configurations.
      * <p>
-     * A BiConsumer implementation to be used together with {@linkplain AbstractMojoDefiningParameters#getActiveSetup()},
-     * passed through method {@linkplain AbstractMojoDefiningParameters.ActiveSetup#apply(BiConsumer)}.
+     * A BiConsumer implementation to be used together with {@linkplain AbstractMojoDefiningParameters#getActiveMojoSetup()},
+     * passed through method {@linkplain ActiveMojoSetup#apply(BiConsumer)}.
      *
      * @return BiConsumer action over {@linkplain ProjectDefinition} and {@linkplain ProjectStructure}.
      */
     private ThrowingBiConsumer copyResourcesAction() {
         return (definition, structure) -> {
-            List<Resource> resources = resolveActiveConfigSets(definition, structure).stream()
+            List<Resource> resources = getActiveMojoSetup().getActiveConfigSetResolver().apply(definition, structure).stream()
                     .flatMap(it -> it.getCopyResources().stream())
                     .collect(Collectors.toList());
 
@@ -97,20 +97,20 @@ public class CopyExternalResourcesMojo extends AbstractMojoDefiningParameters {
      * Copy source packages {@linkplain ConfigSet#getCopySources()}.
      */
     private void copyExternalSources() {
-        getActiveSetup().apply(copySourcesAction());
+        getActiveMojoSetup().apply(copySourcesAction());
     }
 
     /**
      * Method that for given definition and structure processes the copy source packages for all the active configurations.
      * <p>
-     * A BiConsumer implementation to be used together with {@linkplain AbstractMojoDefiningParameters#getActiveSetup()},
-     * passed through method {@linkplain AbstractMojoDefiningParameters.ActiveSetup#apply(BiConsumer)}.
+     * A BiConsumer implementation to be used together with {@linkplain AbstractMojoDefiningParameters#getActiveMojoSetup()},
+     * passed through method {@linkplain ActiveMojoSetup#apply(BiConsumer)}.
      *
      * @return BiConsumer action over {@linkplain ProjectDefinition} and {@linkplain ProjectStructure}.
      */
     private ThrowingBiConsumer copySourcesAction() {
         return (definition, structure) -> {
-            List<Package> filteredPackages = resolveActiveConfigSets(definition, structure).stream()
+            List<Package> filteredPackages = getActiveMojoSetup().getActiveConfigSetResolver().apply(definition, structure).stream()
                     .flatMap(it -> it.getCopySources().stream())
                     .collect(Collectors.toList());
             for (Package pack : filteredPackages) {

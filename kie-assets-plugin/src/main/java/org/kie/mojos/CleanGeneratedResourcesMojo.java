@@ -84,14 +84,14 @@ public class CleanGeneratedResourcesMojo extends AbstractMojoDefiningParameters 
      */
     private void cleanupGeneratedResources() {
         getLog().info("Deleting resources");
-        getActiveSetup().apply(cleanupAction());
+        getActiveMojoSetup().apply(cleanupAction());
     }
 
     /**
      * Method that for given definition and structure processes the cleanup for all the active configurations.
      * <p>
-     * A BiConsumer implementation to be used together with {@linkplain AbstractMojoDefiningParameters#getActiveSetup()},
-     * passed through method {@linkplain AbstractMojoDefiningParameters.ActiveSetup#apply(BiConsumer)}.
+     * A BiConsumer implementation to be used together with {@linkplain AbstractMojoDefiningParameters#getActiveMojoSetup()},
+     * passed through method {@linkplain ActiveMojoSetup#apply(BiConsumer)}.
      *
      * @return BiConsumer action over {@linkplain ProjectDefinition} and {@linkplain ProjectStructure}.
      */
@@ -122,7 +122,8 @@ public class CleanGeneratedResourcesMojo extends AbstractMojoDefiningParameters 
                 }
                 files.addAll(FileFilteringUtils.filterFilesStartingAtPath(outputDirectoryForArchetype.resolve(srcTestJavaResource.getDirectory()), srcTestJavaResource));
             }
-            for (Resource resource : resolveActiveConfigSets(definition, structure).stream().flatMap(it -> it.getDeleteResources().stream()).collect(Collectors.toList())) {
+            for (Resource resource : getActiveMojoSetup().getActiveConfigSetResolver().apply(definition, structure).stream().flatMap(it -> it.getDeleteResources().stream())
+                    .collect(Collectors.toList())) {
                 files.addAll(FileFilteringUtils.filterFilesStartingAtPath(outputDirectoryForArchetype.resolve(resource.getDirectory()), resource));
             }
             for (Path f : files) {

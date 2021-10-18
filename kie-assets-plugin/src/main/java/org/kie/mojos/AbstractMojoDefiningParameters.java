@@ -17,12 +17,10 @@ package org.kie.mojos;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
-import java.util.stream.Collectors;
 
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
@@ -216,13 +214,15 @@ public abstract class AbstractMojoDefiningParameters extends AbstractMojo {
     protected Set<String> activeConfigSets = new HashSet();
 
     /**
-     * File denoting target directory for the generating project, not the generated one.
+     * File denoting location where generated projects will be placed.
      * <p/>
      * For getting generated project location use
      * {@linkplain GeneratedProjectUtils#getOutputDirectoryForGeneratedProject(Path, ProjectDefinition, ProjectStructure)}
      */
     @Parameter(defaultValue = "${project.build.directory}", property = "outputDir", required = true)
     protected File outputDirectory;
+
+    private ActiveMojoSetup activeMojoSetup;
 
     /**
      * Decides if given {@linkplain ProjectDefinition}'s id is among the set of provided ids. To be used to filter
@@ -276,107 +276,18 @@ public abstract class AbstractMojoDefiningParameters extends AbstractMojo {
     /**
      * Provides a way to access easily active pairs of {@linkplain ProjectDefinition}:{@linkplain ProjectStructure}.
      *
-     * @return {@linkplain ActiveSetup} instance allowing to perform action defined by a {@linkplain BiConsumer} instance.
+     * @return {@linkplain ActiveMojoSetup} instance allowing to perform action defined by a {@linkplain BiConsumer} instance.
      */
-    public ActiveSetup getActiveSetup() {
-        return new ActiveSetup()
-                .setProjectDefinitions(projectDefinitions)
-                .setActiveDefinitions(activeDefinitions)
-                .setProjectStructures(projectStructures)
-                .setActiveStructures(activeStructures);
-    }
-
-    /**
-     * Helper class to iterate over all {@linkplain ProjectDefinition} and {@linkplain ProjectStructure} instances and filter
-     * just those that are activated by {@linkplain #activeDefinitions} and {@linkplain #activeStructures}.
-     */
-    public static class ActiveSetup {
-        private List<ProjectDefinition> projectDefinitions;
-        private List<ProjectStructure> projectStructures;
-        private Set<String> activeDefinitions;
-        private Set<String> activeStructures;
-
-        public List<ProjectDefinition> getProjectDefinitions() {
-            return projectDefinitions;
+    public ActiveMojoSetup getActiveMojoSetup() {
+        if (activeMojoSetup == null) {
+            activeMojoSetup = new ActiveMojoSetup()
+                    .setProjectDefinitions(projectDefinitions)
+                    .setActiveDefinitions(activeDefinitions)
+                    .setProjectStructures(projectStructures)
+                    .setActiveStructures(activeStructures)
+                    .setActiveConfigSets(activeConfigSets)
+                    .setReusableConfigSets(reusableConfigSets);
         }
-
-        public ActiveSetup setProjectDefinitions(List<ProjectDefinition> projectDefinitions) {
-            this.projectDefinitions = projectDefinitions;
-            return this;
-        }
-
-        public List<ProjectStructure> getProjectStructures() {
-            return projectStructures;
-        }
-
-        public ActiveSetup setProjectStructures(List<ProjectStructure> projectStructures) {
-            this.projectStructures = projectStructures;
-            return this;
-        }
-
-        public Set<String> getActiveDefinitions() {
-            return activeDefinitions;
-        }
-
-        public ActiveSetup setActiveDefinitions(Set<String> activeDefinitions) {
-            this.activeDefinitions = activeDefinitions;
-            return this;
-        }
-
-        public Set<String> getActiveStructures() {
-            return activeStructures;
-        }
-
-        public ActiveSetup setActiveStructures(Set<String> activeStructures) {
-            this.activeStructures = activeStructures;
-            return this;
-        }
-
-        /**
-         * BiConsumer which gets combinations of all activated {@linkplain ProjectDefinition} and {@linkplain ProjectStructure}.
-         * 
-         * @param action a consumer to accept the active configurations.
-         */
-        public void apply(BiConsumer<ProjectDefinition, ProjectStructure> action) {
-            for (ProjectDefinition definition : projectDefinitions) {
-                if (isDefinitionActive(activeDefinitions, definition)) {
-                    for (ProjectStructure structure : projectStructures) {
-                        if (isStructureActive(activeStructures, structure))
-                            action.accept(definition, structure);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Resolve configSets {@linkplain ConfigSet} specified by one of:
-     * <ul>
-     * <li>{@linkplain ProjectDefinition#getConfig()}</li>
-     * <li>{@linkplain ProjectStructure#getCommonConfig()}</li>
-     * <li>{@linkplain ProjectStructure#getConfigSets()}
-     * with {@linkplain ConfigSet#getId()} matching one of {@linkplain #activeConfigSets}</li>
-     * </ul>
-     *
-     * It also supports {@linkplain ConfigSet#getReusableConfig()} reference to a globally pre-defined configSet using
-     * {@linkplain AbstractMojoDefiningParameters#reusableConfigSets} configuration.
-     */
-    protected List<ConfigSet> resolveActiveConfigSets(ProjectDefinition definition, ProjectStructure structure) {
-        List<ConfigSet> applicableConfig = new ArrayList<>();
-        applicableConfig.add(definition.getConfig());
-        applicableConfig.add(structure.getCommonConfig());
-        applicableConfig.addAll(
-                structure.getConfigSets().stream()
-                        .filter(it -> activeConfigSets.contains(it.getId())).collect(Collectors.toList()));
-        return applicableConfig.stream().map(it -> {
-            if (it.getReusableConfig() != null) {
-                return reusableConfigSets.stream()
-                        .filter(
-                                reusable -> reusable.getId().equals(it.getReusableConfig()))
-                        .findFirst().orElseThrow(() -> new RuntimeException("ConfigSet " + it.getReusableConfig() + " not found among reusable config sets."));
-            } else {
-                return it;
-            }
-        }).collect(Collectors.toList());
+        return activeMojoSetup;
     }
 }
