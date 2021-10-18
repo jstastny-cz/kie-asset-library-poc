@@ -307,6 +307,7 @@ public class GenerateProjectMojo
                 .format(" --batch-mode")
                 .format(" -DprojectGroupId=%s", definition.getGroupId())
                 .format(" -DprojectArtifactId=%s", GeneratedProjectUtils.getTargetProjectName(definition, structure))
+                .format(" -Dextensions=%s", structure.getGenerate().getQuarkusExtensions())
                 .format(" -DpackageName=%s", definition.getPackageName());
         if (structure.getGenerate().getQuarkusPlatformGav() != null) {
             formatter
