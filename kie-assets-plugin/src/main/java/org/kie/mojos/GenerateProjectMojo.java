@@ -37,7 +37,11 @@ import org.apache.maven.shared.invoker.MavenInvocationException;
 import org.kie.model.ConfigSet;
 import org.kie.model.ProjectDefinition;
 import org.kie.model.ProjectStructure;
-import org.kie.utils.*;
+import org.kie.utils.CliUtils;
+import org.kie.utils.GeneratedProjectUtils;
+import org.kie.utils.MaskedMavenMojoException;
+import org.kie.utils.PomManipulationUtils;
+import org.kie.utils.ThrowingBiConsumer;
 
 /**
  * Goal which generates project structure using provided generation method.
@@ -187,25 +191,27 @@ public class GenerateProjectMojo
      * Get string Quarkus CLI command to generate new project based on provided configuration.
      * 
      * @param definition
-     * @param projectStructure
+     * @param structure
      * @return string command
      */
-    String getQuarkusCliCreateAppCommand(ProjectDefinition definition, ProjectStructure projectStructure) {
+    String getQuarkusCliCreateAppCommand(ProjectDefinition definition, ProjectStructure structure) {
         Formatter formatter = new Formatter();
         formatter
                 .format("%s run quarkus@quarkusio", getJbangExecutable())
                 .format(" create app")
-                .format(" %s:%s", definition.getGroupId(), GeneratedProjectUtils.getTargetProjectName(definition, projectStructure))
-                .format(" -x %s", projectStructure.getGenerate().getQuarkusExtensions())
+                .format(" %s:%s", definition.getGroupId(), GeneratedProjectUtils.getTargetProjectName(definition, structure))
                 .format(" --package-name %s", definition.getPackageName())
                 .format(" --batch-mode");
-        if (projectStructure.getGenerate().getQuarkusPlatformGav() != null) {
-            formatter.format(" --platform-bom %s:%s:%s",
-                    projectStructure.getGenerate().getQuarkusPlatformGav().getGroupId(),
-                    projectStructure.getGenerate().getQuarkusPlatformGav().getArtifactId(),
-                    projectStructure.getGenerate().getQuarkusPlatformGav().getVersion());
+        if (structure.getGenerate().getQuarkusExtensions() != null && !structure.getGenerate().getQuarkusExtensions().isEmpty()) {
+            formatter.format(" -x %s", structure.getGenerate().getQuarkusExtensions());
         }
-        if (projectStructure.getGenerate().getProperties() != null && !projectStructure.getGenerate().getProperties().isEmpty()) {
+        if (structure.getGenerate().getQuarkusPlatformGav() != null) {
+            formatter.format(" --platform-bom %s:%s:%s",
+                    structure.getGenerate().getQuarkusPlatformGav().getGroupId(),
+                    structure.getGenerate().getQuarkusPlatformGav().getArtifactId(),
+                    structure.getGenerate().getQuarkusPlatformGav().getVersion());
+        }
+        if (structure.getGenerate().getProperties() != null && !structure.getGenerate().getProperties().isEmpty()) {
             throw new RuntimeException("Quarkus CLI does not support additional custom properties.");
         }
         return formatter.toString();
@@ -244,7 +250,6 @@ public class GenerateProjectMojo
                 .format(" --batch-mode")
                 .format(" -DprojectGroupId=%s", definition.getGroupId())
                 .format(" -DprojectArtifactId=%s", GeneratedProjectUtils.getTargetProjectName(definition, structure))
-                .format(" -Dextensions=%s", structure.getGenerate().getQuarkusExtensions())
                 .format(" -DpackageName=%s", definition.getPackageName());
         if (structure.getGenerate().getQuarkusExtensions() != null && !structure.getGenerate().getQuarkusExtensions().isEmpty()) {
             formatter.format(" -Dextensions=%s", structure.getGenerate().getQuarkusExtensions());

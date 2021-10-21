@@ -56,8 +56,8 @@ public class GenerateProjectCommandTest extends AbstractMojoTest<GenerateProject
                 "jbang run quarkus@quarkusio",
                 " create app",
                 String.format(" %s:%s", definition.getGroupId(), definition.getArtifactId()),
-                String.format(" -x %s", structure.getGenerate().getQuarkusExtensions()),
                 String.format(" --package-name %s", definition.getPackageName()),
+                String.format(" -x %s", structure.getGenerate().getQuarkusExtensions()),
                 String.format(" --platform-bom %s:%s:%s", quarkusPlatformGav.getGroupId(), quarkusPlatformGav.getArtifactId(), quarkusPlatformGav.getVersion())));
     }
 

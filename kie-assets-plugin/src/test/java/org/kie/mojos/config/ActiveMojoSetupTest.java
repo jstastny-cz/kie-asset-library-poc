@@ -15,7 +15,11 @@
  */
 package org.kie.mojos.config;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.hamcrest.Matchers;
@@ -155,6 +159,98 @@ public class ActiveMojoSetupTest {
                 "d1|s1", "d1|s2",
                 "d2|s1", "d2|s2",
                 "d3|s1", "d3|s2"));
+    }
+
+    @Test
+    public void testNegationTwoActiveDefinitions() {
+        ActiveMojoSetup activeMojoSetup = new ActiveMojoSetup()
+                .setProjectDefinitions(Arrays.asList(getDefinition("d1"), getDefinition("d2"), getDefinition("d3")))
+                .setProjectStructures(Arrays.asList(getStructure("s1"), getStructure("s2"), getStructure("s3")))
+                .setActiveDefinitions(new HashSet<>(Arrays.asList("!d2", "!d3")));
+        List<String> combinations = new ArrayList<>();
+        activeMojoSetup.apply((definition, structure) -> {
+            combinations.add(definition.getId() + "|" + structure.getId());
+        });
+        Assert.assertThat(combinations.size(), Matchers.equalTo(3));
+        Assert.assertThat(combinations, Matchers.contains(
+                "d1|s1", "d1|s2", "d1|s3"));
+    }
+
+    @Test
+    public void testNegationTwoActiveStructures() {
+        ActiveMojoSetup activeMojoSetup = new ActiveMojoSetup()
+                .setProjectDefinitions(Arrays.asList(getDefinition("d1"), getDefinition("d2"), getDefinition("d3")))
+                .setProjectStructures(Arrays.asList(getStructure("s1"), getStructure("s2"), getStructure("s3")))
+                .setActiveStructures(new HashSet<>(Arrays.asList("!s2", "!s3")));
+        List<String> combinations = new ArrayList<>();
+        activeMojoSetup.apply((definition, structure) -> {
+            combinations.add(definition.getId() + "|" + structure.getId());
+        });
+        Assert.assertThat(combinations.size(), Matchers.equalTo(3));
+        Assert.assertThat(combinations, Matchers.contains(
+                "d1|s1",
+                "d2|s1",
+                "d3|s1"));
+    }
+
+    @Test
+    public void testNegationAllActiveDefinitions() {
+        ActiveMojoSetup activeMojoSetup = new ActiveMojoSetup()
+                .setProjectDefinitions(Arrays.asList(getDefinition("d1"), getDefinition("d2"), getDefinition("d3")))
+                .setProjectStructures(Arrays.asList(getStructure("s1"), getStructure("s2"), getStructure("s3")))
+                .setActiveDefinitions(new HashSet<>(Arrays.asList("!d1", "!d2", "!d3")));
+        List<String> combinations = new ArrayList<>();
+        activeMojoSetup.apply((definition, structure) -> {
+            combinations.add(definition.getId() + "|" + structure.getId());
+        });
+        Assert.assertThat(combinations.size(), Matchers.equalTo(0));
+    }
+
+    @Test
+    public void testNegationAllActiveStructures() {
+        ActiveMojoSetup activeMojoSetup = new ActiveMojoSetup()
+                .setProjectDefinitions(Arrays.asList(getDefinition("d1"), getDefinition("d2"), getDefinition("d3")))
+                .setProjectStructures(Arrays.asList(getStructure("s1"), getStructure("s2"), getStructure("s3")))
+                .setActiveStructures(new HashSet<>(Arrays.asList("!s1", "!s2", "!s3")));
+        List<String> combinations = new ArrayList<>();
+        activeMojoSetup.apply((definition, structure) -> {
+            combinations.add(definition.getId() + "|" + structure.getId());
+        });
+        Assert.assertThat(combinations.size(), Matchers.equalTo(0));
+    }
+
+    @Test
+    public void testNegationNonExistingActiveDefinitions() {
+        ActiveMojoSetup activeMojoSetup = new ActiveMojoSetup()
+                .setProjectDefinitions(Arrays.asList(getDefinition("d1"), getDefinition("d2"), getDefinition("d3")))
+                .setProjectStructures(Arrays.asList(getStructure("s1"), getStructure("s2"), getStructure("s3")))
+                .setActiveDefinitions(new HashSet<>(Arrays.asList("d1", "!d100")));
+        List<String> combinations = new ArrayList<>();
+        activeMojoSetup.apply((definition, structure) -> {
+            combinations.add(definition.getId() + "|" + structure.getId());
+        });
+        Assert.assertThat(combinations.size(), Matchers.equalTo(9));
+        Assert.assertThat(combinations, Matchers.contains(
+                "d1|s1", "d1|s2", "d1|s3",
+                "d2|s1", "d2|s2", "d2|s3",
+                "d3|s1", "d3|s2", "d3|s3"));
+    }
+
+    @Test
+    public void testNegationNonExistingActiveStructures() {
+        ActiveMojoSetup activeMojoSetup = new ActiveMojoSetup()
+                .setProjectDefinitions(Arrays.asList(getDefinition("d1"), getDefinition("d2"), getDefinition("d3")))
+                .setProjectStructures(Arrays.asList(getStructure("s1"), getStructure("s2"), getStructure("s3")))
+                .setActiveStructures(new HashSet<>(Arrays.asList("s1", "!s100")));
+        List<String> combinations = new ArrayList<>();
+        activeMojoSetup.apply((definition, structure) -> {
+            combinations.add(definition.getId() + "|" + structure.getId());
+        });
+        Assert.assertThat(combinations.size(), Matchers.equalTo(9));
+        Assert.assertThat(combinations, Matchers.contains(
+                "d1|s1", "d1|s2", "d1|s3",
+                "d2|s1", "d2|s2", "d2|s3",
+                "d3|s1", "d3|s2", "d3|s3"));
     }
 
     @Test

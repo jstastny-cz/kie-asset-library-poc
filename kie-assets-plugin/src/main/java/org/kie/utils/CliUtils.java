@@ -104,20 +104,10 @@ public class CliUtils {
      */
     private Runnable collectLogs(Consumer<String> consumer, InputStream stream) {
         return () -> {
-            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream));
-            try {
-                String s;
-                while ((s = bufferedReader.readLine()) != null) {
-                    consumer.accept(s);
-                }
+            try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream))) {
+                bufferedReader.lines().forEach(consumer);
             } catch (IOException e) {
                 getLog().error("Issues when reading from process input stream.", e);
-            } finally {
-                try {
-                    bufferedReader.close();
-                } catch (IOException e) {
-                    getLog().error("Issues when closing buffered reader for process.", e);
-                }
             }
         };
     }
