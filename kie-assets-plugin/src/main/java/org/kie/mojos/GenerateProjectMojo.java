@@ -111,7 +111,11 @@ public class GenerateProjectMojo
      * Grouping project is created per ProjectStructure, so grouping all ProjectDefinitions that were generated with given structure.
      * <p />
      * The grouping project is named to indicate for which structure the project was created:
-     * <pre>[structure.id]-grouping-project-pom.xml</pre>
+     * 
+     * <pre>
+     * [structure.id]-grouping-project-pom.xml
+     * </pre>
+     * 
      * So it needs to be executed using the -f maven option to execute the file directly.
      * <p />
      * The file is located in {@linkplain #outputDirectory} folder, so all modules are referenced just by the module name
